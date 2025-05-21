@@ -1,2 +1,5 @@
 __pycache__/
 transcription_output.txt
+
+*.flac
+*.acc
