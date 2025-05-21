@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-import whisper
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def transcribe_file(model_path, file_path):
@@ -33,19 +33,24 @@ def save_transcription(segments, output_file):
             f.write(f"[{seg['start']:.2f}s][{seg['speaker']}] {seg['text']}\n")
 
 def main():
+    # 引数処理（--model オプションを追加）
+    parser = argparse.ArgumentParser(description="Whisperを使った音声ファイルの並列文字起こし")
+    parser.add_argument("--model", default="medium", choices=["tiny", "base", "small", "medium", "large"],
+                        help="Whisperモデルの種類（デフォルト: medium）")
+    args = parser.parse_args()
+
     audio_dir = "target"
     output_file = "transcription_output.txt"
-    model_type = "medium"
     max_workers = 2  # 並列数（CPUコア数や性能に応じて調整）
 
     audio_files = get_audio_files(audio_dir)
     all_segments = []
 
-    print(f"🔁 並列文字起こし開始（{max_workers} スレッド）")
+    print(f"🔁 文字起こし開始（{max_workers} スレッド） - モデル: {args.model}")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(transcribe_file, model_type, file_path): file_path
+            executor.submit(transcribe_file, args.model, file_path): file_path
             for file_path in audio_files
         }
 
