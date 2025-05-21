@@ -1,44 +1,65 @@
+#!/usr/bin/env python3
+
 import os
 import whisper
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# 出力ファイル名
-output_file = "transcription_output.txt"
-
-# 音声ファイルが入っているサブディレクトリのパス
-base_dir = "target"
-
-# 話者ごとのファイルを指定（必要に応じて変更してください）
-files = {
-    "金子": os.path.join(base_dir, "1-masakazukaneko_0.flac"),
-    "青山": os.path.join(base_dir, "2-aoyamayuria_0.flac"),
-    "張":  os.path.join(base_dir, "3-cho9781_0.flac"),
-    "岩下": os.path.join(base_dir, "4-ym_iwashita_0.flac"),
-    "千原": os.path.join(base_dir, "5-tchihara_0.flac"),
-}
-
-model = whisper.load_model("medium")
-
-all_segments = []
-
-for speaker, file_path in files.items():
-    print(f"処理中: {speaker}さんのファイル {file_path}")
+def transcribe_file(model_path, file_path):
+    import whisper  # 各スレッドで確実にインポート
+    model = whisper.load_model(model_path)
+    speaker = os.path.splitext(os.path.basename(file_path))[0]
     result = model.transcribe(file_path, language="ja")
-    
-    for seg in result["segments"]:
-        all_segments.append({
+    return [
+        {
             "speaker": speaker,
             "start": seg["start"],
             "end": seg["end"],
             "text": seg["text"]
-        })
+        }
+        for seg in result["segments"]
+    ]
 
-# 開始時間順にソート
-all_segments.sort(key=lambda x: x["start"])
+def get_audio_files(directory, extensions=(".flac", ".aac")):
+    return [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.endswith(extensions)
+    ]
 
-# ファイル出力
-with open(output_file, "w", encoding="utf-8") as f:
-    for seg in all_segments:
-        line = f"[{seg['start']:.2f}s][{seg['speaker']}] {seg['text']}\n"
-        f.write(line)
+def save_transcription(segments, output_file):
+    segments.sort(key=lambda x: x["start"])
+    with open(output_file, "w", encoding="utf-8") as f:
+        for seg in segments:
+            f.write(f"[{seg['start']:.2f}s][{seg['speaker']}] {seg['text']}\n")
 
-print(f"\n✅ 文字起こし結果を {output_file} に保存しました。")
+def main():
+    audio_dir = "target"
+    output_file = "transcription_output.txt"
+    model_type = "medium"
+    max_workers = 2  # 並列数（CPUコア数や性能に応じて調整）
+
+    audio_files = get_audio_files(audio_dir)
+    all_segments = []
+
+    print(f"🔁 並列文字起こし開始（{max_workers} スレッド）")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(transcribe_file, model_type, file_path): file_path
+            for file_path in audio_files
+        }
+
+        for future in as_completed(futures):
+            file_path = futures[future]
+            try:
+                segments = future.result()
+                all_segments.extend(segments)
+                print(f"✅ 完了: {file_path}")
+            except Exception as e:
+                print(f"❌ 失敗: {file_path} → {e}")
+
+    save_transcription(all_segments, output_file)
+    print(f"\n📄 出力完了: {output_file}")
+
+if __name__ == "__main__":
+    main()
