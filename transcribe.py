@@ -4,6 +4,21 @@ import os
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def is_valid_segment(text):
+    normalized = text.strip()
+    # 文字起こしのフィルタリング条件
+    # 1. 特定のトークンと部分一致
+    if normalized in {"ん", "うん", "はい", "お疲れさまでした", "ご視聴ありがとうございました"}:
+        return False
+    # 2. 文字数が極体に少ない
+    if len(normalized) <= 2:
+        return False
+    # 3. 特定のトークンと完全一致
+    if normalized.count("ご視聴ありがとうございました") > 0:
+        return False
+    return True
+
+
 def transcribe_file(model_path, file_path):
     import whisper  # 各スレッドで確実にインポート
     model = whisper.load_model(model_path)
@@ -17,6 +32,7 @@ def transcribe_file(model_path, file_path):
             "text": seg["text"]
         }
         for seg in result["segments"]
+        if is_valid_segment(seg["text"])
     ]
 
 def get_audio_files(directory, extensions=(".flac", ".aac")):
@@ -34,7 +50,7 @@ def save_transcription(segments, output_file):
 
 def main():
     # 引数処理（--model オプションを追加）
-    parser = argparse.ArgumentParser(description="Whisperを使った音声ファイルの並列文字起こし")
+    parser = argparse.ArgumentParser(description="Whisperを使った音声ファイルの文字起こし")
     parser.add_argument("--model", default="medium", choices=["tiny", "base", "small", "medium", "large"],
                         help="Whisperモデルの種類（デフォルト: medium）")
     args = parser.parse_args()
