@@ -3,27 +3,49 @@
 import os
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+
 
 def is_valid_segment(text):
     normalized = text.strip()
     # 文字起こしのフィルタリング条件
-    # 1. 特定のトークンと部分一致
-    if normalized in {"ん", "うん", "はい", "お疲れさまでした", "ご視聴ありがとうございました"}:
+    # 意味のない単語や定型句（完全一致）
+    if normalized in {
+        "ん", "うん", "えー", "あー", "ですね", "はい",
+        "お疲れさまでした", "ありがとうございました", "ご視聴ありがとうございました"
+    }:
         return False
-    # 2. 文字数が極体に少ない
-    if len(normalized) <= 2:
+    
+    # 特定フレーズを含むもの（部分一致）
+    if any(kw in normalized for kw in [
+        "ご視聴ありがとうございました",
+        "1、2、3、4",
+        "1", "2", "3", "4",  # 数字単体
+        "あー", "うーん", "えー"  # あいづち
+    ]):
         return False
-    # 3. 特定のトークンと完全一致
-    if normalized.count("ご視聴ありがとうございました") > 0:
-        return False
+    
     return True
 
+def remove_repetitive_segments(segments):
+    filtered = []
+    prev_text = None
+    for seg in segments:
+        current_text = seg["text"].strip()
+        if current_text != prev_text:
+            filtered.append(seg)
+        prev_text = current_text
+    return filtered
 
 def transcribe_file(model_path, file_path):
     import whisper  # 各スレッドで確実にインポート
     model = whisper.load_model(model_path)
     speaker = os.path.splitext(os.path.basename(file_path))[0]
     result = model.transcribe(file_path, language="ja")
+
+    # 連続重複フィルタを適用
+    cleaned_segments = remove_repetitive_segments(result["segments"])
+
     return [
         {
             "speaker": speaker,
@@ -31,7 +53,7 @@ def transcribe_file(model_path, file_path):
             "end": seg["end"],
             "text": seg["text"]
         }
-        for seg in result["segments"]
+        for seg in cleaned_segments
         if is_valid_segment(seg["text"])
     ]
 
@@ -54,6 +76,9 @@ def main():
     parser.add_argument("--model", default="medium", choices=["tiny", "base", "small", "medium", "large"],
                         help="Whisperモデルの種類（デフォルト: medium）")
     args = parser.parse_args()
+
+    start_time = datetime.now()
+    print(f"🕒 処理開始: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     audio_dir = "target"
     output_file = "transcription_output.txt"
@@ -81,6 +106,10 @@ def main():
 
     save_transcription(all_segments, output_file)
     print(f"\n📄 出力完了: {output_file}")
+
+    end_time = datetime.now()
+    print(f"🕒 処理終了: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"⏱️ 所要時間: {str(end_time - start_time)}")
 
 if __name__ == "__main__":
     main()
